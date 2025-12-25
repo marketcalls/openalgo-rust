@@ -1,6 +1,6 @@
 [package]
 name = "openalgo"
-version = "1.0.4"
+version = "1.0.5"
 edition = "2021"
 authors = ["Rajandran R"]
 description = "A Rust wrapper for the OpenAlgo API with WebSocket support"

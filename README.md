@@ -8,7 +8,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-openalgo = "1.0.4"
+openalgo = "1.0.5"
 tokio = { version = "1", features = ["full"] }
 ```
 

@@ -21,7 +21,7 @@ impl AnalyzerAPI {
             apikey: self.client.api_key.clone(),
         };
 
-        self.client.post("analyzerstatus", &request).await
+        self.client.post("analyzer", &request).await
     }
 
     /// Toggle analyzer mode
@@ -38,6 +38,6 @@ impl AnalyzerAPI {
             mode,
         };
 
-        self.client.post("analyzertoggle", &request).await
+        self.client.post("analyzer/toggle", &request).await
     }
 }

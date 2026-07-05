@@ -61,7 +61,7 @@ let client = OpenAlgo::with_config(
 
 ## Place Order
 
-Place a simple market order.
+Place a simple market order. `disclosed_quantity` is optional (`Option<&str>`).
 
 ```rust
 let order = client.place_order(
@@ -72,6 +72,7 @@ let order = client.place_order(
     "MARKET",         // pricetype (MARKET/LIMIT/SL/SL-M)
     "MIS",            // product (CNC/NRML/MIS)
     "1",              // quantity
+    None,             // disclosed_quantity: Option<&str>
 ).await?;
 ```
 
@@ -85,7 +86,7 @@ let order = client.place_order(
 
 ## Place Limit Order
 
-Place a limit order with price.
+Place a limit order with price. `disclosed_quantity` is optional (`Option<&str>`).
 
 ```rust
 let order = client.place_limit_order(
@@ -96,12 +97,13 @@ let order = client.place_limit_order(
     "MIS",            // product
     "1",              // quantity
     "2500.00",        // price
+    None,             // disclosed_quantity: Option<&str>
 ).await?;
 ```
 
 ## Place Stop-Loss Order
 
-Place a stop-loss order with trigger price.
+Place a stop-loss order with trigger price. `disclosed_quantity` is optional (`Option<&str>`).
 
 ```rust
 let order = client.place_sl_order(
@@ -113,6 +115,7 @@ let order = client.place_sl_order(
     "1",              // quantity
     "2500.00",        // price
     "2490.00",        // trigger_price
+    None,             // disclosed_quantity: Option<&str>
 ).await?;
 ```
 
@@ -137,19 +140,38 @@ let order = client.place_smart_order(
 
 Place an options order with automatic strike selection.
 
+Note: there is no `splitsize` parameter on this endpoint (an earlier version of
+this SDK mistakenly required one — the real OpenAlgo `optionsorder` endpoint has
+no such field). `expiry_date` is optional (resolvable when `underlying` already
+embeds an expiry, e.g. `"NIFTY28OCT25FUT"`), and `strike_int` is an optional,
+deprecated parameter kept only for parity with the Python SDK. Use
+[`OrderAPI::split_order`](#split-order) separately if you need order splitting.
+
 ```rust
+use std::collections::HashMap;
+
 let order = client.options_order(
     "Strategy1",      // strategy
     "NIFTY",          // underlying
     "NFO",            // exchange
-    "241226",         // expiry_date (YYMMDD)
     "0",              // offset (0=ATM, 1=OTM1, -1=ITM1)
     "CE",             // option_type (CE/PE)
     "BUY",            // action
     "50",             // quantity
     "MARKET",         // pricetype
     "MIS",            // product
-    "50",             // splitsize
+    Some("241226"),   // expiry_date (YYMMDD), optional
+    None,             // strike_int (deprecated), optional
+    None,             // extra: Option<HashMap<String, serde_json::Value>> forwarded verbatim
+).await?;
+
+// LIMIT order using `extra` to forward broker-specific / order-specific fields
+// (mirrors Python's **kwargs: price, trigger_price, disclosed_quantity, ...)
+let mut extra = HashMap::new();
+extra.insert("price".to_string(), serde_json::json!("50.0"));
+let limit_order = client.options_order(
+    "Strategy1", "NIFTY", "NFO", "0", "CE", "BUY", "50", "LIMIT", "MIS",
+    Some("241226"), None, Some(extra),
 ).await?;
 ```
 
@@ -248,7 +270,8 @@ let result = client.split_order(
 
 ## Modify Order
 
-Modify an existing order.
+Modify an existing order. `disclosed_quantity`, `trigger_price`, and `extra`
+(broker-specific kwargs forwarded verbatim) are optional.
 
 ```rust
 let result = client.modify_order(
@@ -261,6 +284,15 @@ let result = client.modify_order(
     "MIS",            // product
     "1",              // quantity
     "2550.00",        // price
+    None,             // disclosed_quantity: Option<&str>
+    None,             // trigger_price: Option<&str>
+    None,             // extra: Option<HashMap<String, serde_json::Value>>
+).await?;
+
+// With disclosed quantity and trigger price
+let result = client.modify_order(
+    "1234567890", "Strategy1", "RELIANCE", "BUY", "NSE", "SL", "MIS", "1", "2550.00",
+    Some("200"), Some("2545.00"), None,
 ).await?;
 ```
 
@@ -372,6 +404,9 @@ Get available intervals.
 
 ```rust
 let intervals = client.intervals().await?;
+
+// Legacy alias (mirrors Python's `interval()`)
+let intervals = client.interval().await?;
 ```
 
 ## Symbol
@@ -384,10 +419,13 @@ let info = client.symbol("RELIANCE", "NSE").await?;
 
 ## Search
 
-Search for symbols.
+Search for symbols. `exchange` is optional — pass `None` to search across all exchanges.
 
 ```rust
-let results = client.search("RELI", "NSE").await?;
+let results = client.search("RELI", Some("NSE"), None).await?;
+
+// Search across all exchanges
+let results = client.search("RELI", None, None).await?;
 ```
 
 ## Expiry
@@ -408,10 +446,19 @@ let chain = client.option_chain("NIFTY", "NFO", "241226").await?;
 
 ## Option Symbol
 
-Get option symbol by offset.
+Get option symbol details by underlying + offset, without placing an order.
+`expiry_date` is optional (resolvable when `underlying` already embeds an
+expiry, e.g. `"NIFTY28OCT25FUT"`); `strategy` and `strike_int` are optional,
+deprecated parameters kept only for parity with the Python SDK.
 
 ```rust
-let symbol = client.option_symbol("NIFTY", "NFO", "241226", "0", "CE").await?;
+let symbol = client.option_symbol(
+    "NIFTY", "NFO", "0", "CE",
+    Some("241226"),   // expiry_date, optional
+    None,             // strategy (deprecated), optional
+    None,             // strike_int (deprecated), optional
+    None,             // extra kwargs, optional
+).await?;
 ```
 
 ## Synthetic Future
@@ -424,24 +471,40 @@ let future = client.synthetic_future("NIFTY", "NFO", "241226").await?;
 
 ## Option Greeks
 
-Get option Greeks.
+Get option Greeks (Delta, Gamma, Theta, Vega, Rho) and implied volatility.
+Only `symbol`/`exchange` are required — everything else is optional and
+auto-detected or defaulted server-side (interest rate defaults to 0; the
+underlying is auto-detected; live prices are fetched unless `forward_price`
+is supplied).
 
 ```rust
 let greeks = client.option_greeks(
     "NIFTY24DEC24000CE",
     "NFO",
-    6.5,              // interest_rate
-    "NIFTY",          // underlying_symbol
-    "NSE",            // underlying_exchange
+    Some(6.5),        // interest_rate, optional
+    None,             // forward_price, optional (skips underlying price fetch)
+    Some("NIFTY"),    // underlying_symbol, optional (auto-detected otherwise)
+    Some("NSE"),      // underlying_exchange, optional (auto-detected otherwise)
+    None,             // expiry_time, optional (e.g. "19:00" for MCX)
+    None,             // extra kwargs, optional
 ).await?;
+
+// Simplest form — everything auto-detected
+let greeks = client.option_greeks("NIFTY24DEC24000CE", "NFO", None, None, None, None, None, None).await?;
 ```
 
 ## Instruments
 
-Get all instruments for an exchange.
+Download instrument master data, with optional exchange filtering. Pass
+`exchange: None` to download instruments for **all** supported exchanges
+(NSE, BSE, NFO, BFO, MCX, CDS, BCD, NSE_INDEX, BSE_INDEX) combined into one
+response, mirroring Python's `instruments(exchange=None)`.
 
 ```rust
-let instruments = client.instruments("NSE").await?;
+let instruments = client.instruments(Some("NSE")).await?;
+
+// Download all exchanges
+let all_instruments = client.instruments(None).await?;
 ```
 
 ---
@@ -521,18 +584,27 @@ let margin = client.margin(positions).await?;
 
 ## Holidays
 
-Get market holidays.
+Get market holidays. `year` is optional (2020-2050) — pass `None` to let the
+server default to the current year.
 
 ```rust
-let holidays = client.holidays(2024).await?;
+let holidays = client.holidays(Some(2024)).await?;
+
+// Current year (server default)
+let holidays = client.holidays(None).await?;
 ```
 
 ## Timings
 
-Get exchange timings for a date.
+Get exchange timings for a date. `date` is optional — pass `None` to default
+client-side to today's date (`YYYY-MM-DD`, Asia/Kolkata), matching Python's
+`datetime.now()` default.
 
 ```rust
-let timings = client.timings("2024-12-25").await?;
+let timings = client.timings(Some("2024-12-25")).await?;
+
+// Today's timings
+let timings = client.timings(None).await?;
 ```
 
 ## Telegram
@@ -541,6 +613,72 @@ Send a Telegram message.
 
 ```rust
 let result = client.telegram("username", "Hello from OpenAlgo!").await?;
+
+// Custom priority (1-10)
+let result = client.telegram_priority("username", "Urgent alert!", 10).await?;
+```
+
+---
+
+# WhatsApp API
+
+Send WhatsApp notifications through the OpenAlgo paired device. Requires the
+device to already be paired from the OpenAlgo web UI's `/whatsapp` page —
+pairing itself is intentionally not exposed via the API.
+
+## Send a WhatsApp Message
+
+The simplest form sends a plain-text message to the paired device itself (self).
+
+```rust
+let result = client.whatsapp_message("Build #482 deployed. P&L: +1.2%").await?;
+
+// To a single phone number (E.164 digits)
+let result = client.whatsapp_to("919876543210", "Stop-loss hit on BANKNIFTY!").await?;
+```
+
+**Response:**
+```json
+{
+    "status": "success",
+    "message": "Delivered to 1, failed 0",
+    "data": { "sent": ["<self>"], "failed": [], "skipped": 0 }
+}
+```
+
+## Full Control (broadcast, image/document attachments, fire-and-forget)
+
+For anything beyond a single self/phone text message — broadcasts (up to 5
+recipients), username-based recipients, image/document attachments, or
+`wait_for_delivery=false` — use `client.whatsapp.whatsapp(recipient, options)` directly.
+
+```rust
+use openalgo::whatsapp::{WhatsAppRecipient, WhatsAppOptions};
+
+// Small broadcast (max 5 numbers; anything beyond is dropped server-side)
+let result = client.whatsapp.whatsapp(
+    WhatsAppRecipient::Phones(vec!["919876543210".to_string(), "919812345678".to_string()]),
+    WhatsAppOptions {
+        message: Some("Server maintenance in 10 minutes".to_string()),
+        ..Default::default()
+    },
+).await?;
+
+// Send to a linked OpenAlgo username, with an image attachment
+let result = client.whatsapp.whatsapp(
+    WhatsAppRecipient::Username("alice".to_string()),
+    WhatsAppOptions {
+        message: Some("NIFTY end-of-day chart".to_string()),
+        image: Some("/srv/charts/nifty_eod.png".to_string()),
+        ..Default::default()
+    },
+).await?;
+
+// Fire-and-forget (skip the delivery report) for time-critical alerts
+let result = client.whatsapp.whatsapp(
+    WhatsAppRecipient::SelfDevice,
+    WhatsAppOptions { message: Some("Stop-loss hit!".to_string()), wait_for_delivery: Some(false), ..Default::default() },
+).await?;
 ```
 
 ---
@@ -561,6 +699,28 @@ Toggle analyzer mode.
 
 ```rust
 let result = client.analyzer_toggle(true).await?;
+```
+
+---
+
+# Strategy Webhook
+
+`Strategy` is a standalone TradingView-style webhook poster — unlike every
+other API in this SDK, it is **not** part of `OpenAlgo`. It has no API key;
+instead it POSTs directly to a strategy's webhook URL
+(`{host_url}/strategy/webhook/{webhook_id}`). The strategy mode (LONG_ONLY,
+SHORT_ONLY, BOTH) is configured on the OpenAlgo server, not in the SDK call.
+
+```rust
+use openalgo::Strategy;
+
+let strategy = Strategy::new("http://127.0.0.1:5000", "your-webhook-id");
+
+// Simple signal
+let result = strategy.strategy_order("RELIANCE", "BUY", None).await?;
+
+// With an explicit position size (required for BOTH mode)
+let result = strategy.strategy_order("NIFTY", "SELL", Some(50)).await?;
 ```
 
 ---
@@ -639,6 +799,30 @@ subscriber.unsubscribe_ltp(instruments.clone()).await?;
 
 // Disconnect
 subscriber.disconnect().await?;
+```
+
+## Snapshot Getters (`get_ltp` / `get_quotes` / `get_depth`)
+
+Alongside the channel-based `data_rx` stream, `OpenAlgoWebSocket` keeps a local
+snapshot cache (keyed by `"EXCHANGE:SYMBOL"`) that is updated as `market_data`
+messages arrive, mirroring Python `FeedAPI`'s `get_ltp()` / `get_quotes()` /
+`get_depth()`. Call these any time on the same `ws` instance you connected
+with — no need to consume `data_rx` yourself just to read the latest values.
+Both `exchange` and `symbol` filters are optional; omit either (or both) to
+get everything cached so far.
+
+```rust
+// After ws.connect() and subscribing...
+
+// Nested JSON: {"ltp": {"NSE": {"RELIANCE": {"timestamp": ..., "ltp": ...}}}}
+let ltp_snapshot = ws.get_ltp(None, None);
+let ltp_reliance = ws.get_ltp(Some("NSE"), Some("RELIANCE"));
+
+// Nested JSON: {"quote": {"NSE": {"RELIANCE": {"open", "high", "low", "close", "ltp", "volume", ...}}}}
+let quotes_snapshot = ws.get_quotes(Some("NSE"), None);
+
+// Nested JSON: {"depth": {"NSE": {"RELIANCE": {"timestamp", "ltp", "buyBook": {"1": {...}, ..., "5": {...}}, "sellBook": {...}}}}}
+let depth_snapshot = ws.get_depth(Some("NSE"), Some("RELIANCE"));
 ```
 
 ---

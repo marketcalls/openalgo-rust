@@ -16,14 +16,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "Strategy1",
         "NIFTY",
         "NFO",
-        "241226",
         "0",              // ATM
         "CE",
         "BUY",
         "50",
         "MARKET",
         "MIS",
-        "50",
+        Some("241226"),   // expiry_date
+        None,             // strike_int (deprecated)
+        None,             // extra kwargs
     ).await?;
     println!("Options Order Result: {:?}", result);
 
@@ -33,14 +34,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "Strategy1",
         "BANKNIFTY",
         "NFO",
-        "241226",
         "-2",             // 2 strikes below ATM
         "PE",
         "BUY",
         "30",
         "MARKET",
         "MIS",
-        "15",
+        Some("241226"),   // expiry_date
+        None,             // strike_int (deprecated)
+        None,             // extra kwargs
     ).await?;
     println!("OTM Put Order Result: {:?}", result);
 

@@ -2,7 +2,7 @@
 //!
 //! This example demonstrates how to place different types of orders using the OpenAlgo SDK.
 
-use openalgo::{OpenAlgo, BasketOrderItem, OptionsLeg};
+use openalgo::{OpenAlgo, BasketOrderItem};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -20,6 +20,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "MARKET",
         "MIS",
         "1",
+        None,             // disclosed_quantity
     ).await?;
     println!("Order Result: {:?}", result);
 
@@ -33,6 +34,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "MIS",
         "1",
         "2500.00",
+        Some("5"),        // disclosed_quantity
     ).await?;
     println!("Limit Order Result: {:?}", result);
 
@@ -47,6 +49,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "1",
         "2500.00",
         "2490.00",
+        None,             // disclosed_quantity
     ).await?;
     println!("SL Order Result: {:?}", result);
 
@@ -67,8 +70,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Example 5: Place basket orders
     println!("\n=== Basket Order ===");
     let orders = vec![
-        BasketOrderItem::new("RELIANCE", "NSE", "BUY", "1", "MARKET", "MIS"),
-        BasketOrderItem::new("TCS", "NSE", "BUY", "1", "MARKET", "MIS"),
+        BasketOrderItem::new("RELIANCE", "NSE", "BUY", 1, "MARKET", "MIS"),
+        BasketOrderItem::new("TCS", "NSE", "BUY", 1, "MARKET", "MIS"),
     ];
     let result = client.basket_order("Strategy1", orders).await?;
     println!("Basket Order Result: {:?}", result);
@@ -80,8 +83,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "RELIANCE",
         "BUY",
         "NSE",
-        "100",
-        "25",
+        100,
+        25,
         "MARKET",
         "MIS",
     ).await?;
@@ -99,6 +102,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "MIS",
         "1",
         "2550.00",
+        None,             // disclosed_quantity
+        None,             // trigger_price
+        None,             // extra kwargs
     ).await?;
     println!("Modify Order Result: {:?}", result);
 

@@ -2,6 +2,7 @@
 
 use crate::client::{OpenAlgoClient, OpenAlgoError};
 use crate::types::*;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 /// Order API client
@@ -16,6 +17,9 @@ impl OrderAPI {
     }
 
     /// Place an order (simple form)
+    ///
+    /// * `disclosed_quantity` - Optional disclosed quantity, mirroring Python's `**kwargs`.
+    #[allow(clippy::too_many_arguments)]
     pub async fn place_order(
         &self,
         strategy: &str,
@@ -25,6 +29,7 @@ impl OrderAPI {
         pricetype: &str,
         product: &str,
         quantity: &str,
+        disclosed_quantity: Option<&str>,
     ) -> Result<OrderResponse, OpenAlgoError> {
         let request = PlaceOrderRequest {
             apikey: self.client.api_key.clone(),
@@ -37,13 +42,16 @@ impl OrderAPI {
             quantity: quantity.to_string(),
             price: None,
             trigger_price: None,
-            disclosed_quantity: None,
+            disclosed_quantity: disclosed_quantity.map(|s| s.to_string()),
         };
 
         self.client.post("placeorder", &request).await
     }
 
     /// Place a limit order with price
+    ///
+    /// * `disclosed_quantity` - Optional disclosed quantity, mirroring Python's `**kwargs`.
+    #[allow(clippy::too_many_arguments)]
     pub async fn place_limit_order(
         &self,
         strategy: &str,
@@ -53,6 +61,7 @@ impl OrderAPI {
         product: &str,
         quantity: &str,
         price: &str,
+        disclosed_quantity: Option<&str>,
     ) -> Result<OrderResponse, OpenAlgoError> {
         let request = PlaceOrderRequest {
             apikey: self.client.api_key.clone(),
@@ -65,13 +74,16 @@ impl OrderAPI {
             quantity: quantity.to_string(),
             price: Some(price.to_string()),
             trigger_price: None,
-            disclosed_quantity: None,
+            disclosed_quantity: disclosed_quantity.map(|s| s.to_string()),
         };
 
         self.client.post("placeorder", &request).await
     }
 
     /// Place a stop-loss order
+    ///
+    /// * `disclosed_quantity` - Optional disclosed quantity, mirroring Python's `**kwargs`.
+    #[allow(clippy::too_many_arguments)]
     pub async fn place_sl_order(
         &self,
         strategy: &str,
@@ -82,6 +94,7 @@ impl OrderAPI {
         quantity: &str,
         price: &str,
         trigger_price: &str,
+        disclosed_quantity: Option<&str>,
     ) -> Result<OrderResponse, OpenAlgoError> {
         let request = PlaceOrderRequest {
             apikey: self.client.api_key.clone(),
@@ -94,7 +107,7 @@ impl OrderAPI {
             quantity: quantity.to_string(),
             price: Some(price.to_string()),
             trigger_price: Some(trigger_price.to_string()),
-            disclosed_quantity: None,
+            disclosed_quantity: disclosed_quantity.map(|s| s.to_string()),
         };
 
         self.client.post("placeorder", &request).await
@@ -127,34 +140,49 @@ impl OrderAPI {
         self.client.post("placesmartorder", &request).await
     }
 
-    /// Place an options order
+    /// Place an options order by auto-resolving the symbol from underlying + offset
+    ///
+    /// Mirrors Python's `optionsorder()`. Note there is no `splitsize` parameter
+    /// on this endpoint (that was a mismatched invention in an earlier version of
+    /// this SDK) — use [`OrderAPI::split_order`] separately if you need order
+    /// splitting.
+    ///
+    /// * `expiry_date` - Optional; resolvable when `underlying` already embeds an
+    ///   expiry (e.g. `NIFTY28OCT25FUT`).
+    /// * `strike_int` - Deprecated in Python, kept for parity. Optional.
+    /// * `extra` - Extra broker-specific fields forwarded verbatim, mirroring
+    ///   Python's `**kwargs` (e.g. `price` for LIMIT orders, `trigger_price` for
+    ///   SL/SL-M orders, `disclosed_quantity`).
+    #[allow(clippy::too_many_arguments)]
     pub async fn options_order(
         &self,
         strategy: &str,
         underlying: &str,
         exchange: &str,
-        expiry_date: &str,
         offset: &str,
         option_type: &str,
         action: &str,
         quantity: &str,
         pricetype: &str,
         product: &str,
-        splitsize: &str,
+        expiry_date: Option<&str>,
+        strike_int: Option<i32>,
+        extra: Option<HashMap<String, serde_json::Value>>,
     ) -> Result<OptionsOrderResponse, OpenAlgoError> {
         let request = OptionsOrderRequest {
             apikey: self.client.api_key.clone(),
             strategy: strategy.to_string(),
             underlying: underlying.to_string(),
             exchange: exchange.to_string(),
-            expiry_date: expiry_date.to_string(),
+            expiry_date: expiry_date.map(|s| s.to_string()),
             offset: offset.to_string(),
             option_type: option_type.to_string(),
             action: action.to_string(),
             quantity: quantity.to_string(),
             pricetype: pricetype.to_string(),
             product: product.to_string(),
-            splitsize: splitsize.to_string(),
+            strike_int: strike_int.map(|v| v.to_string()),
+            extra: extra.unwrap_or_default(),
         };
 
         self.client.post("optionsorder", &request).await
@@ -223,7 +251,12 @@ impl OrderAPI {
         self.client.post("splitorder", &request).await
     }
 
-    /// Modify an order
+    /// Modify an existing order
+    ///
+    /// * `disclosed_quantity` - Optional disclosed quantity.
+    /// * `trigger_price` - Optional trigger price (for SL / SL-M modifications).
+    /// * `extra` - Extra broker-specific fields forwarded verbatim, mirroring Python's `**kwargs`.
+    #[allow(clippy::too_many_arguments)]
     pub async fn modify_order(
         &self,
         orderid: &str,
@@ -235,6 +268,9 @@ impl OrderAPI {
         product: &str,
         quantity: &str,
         price: &str,
+        disclosed_quantity: Option<&str>,
+        trigger_price: Option<&str>,
+        extra: Option<HashMap<String, serde_json::Value>>,
     ) -> Result<OrderResponse, OpenAlgoError> {
         let request = ModifyOrderRequest {
             apikey: self.client.api_key.clone(),
@@ -247,8 +283,9 @@ impl OrderAPI {
             product: product.to_string(),
             quantity: quantity.to_string(),
             price: price.to_string(),
-            disclosed_quantity: None,
-            trigger_price: None,
+            disclosed_quantity: disclosed_quantity.map(|s| s.to_string()),
+            trigger_price: trigger_price.map(|s| s.to_string()),
+            extra: extra.unwrap_or_default(),
         };
 
         self.client.post("modifyorder", &request).await

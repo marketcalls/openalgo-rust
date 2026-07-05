@@ -1,6 +1,7 @@
 //! Type definitions for OpenAlgo API requests and responses.
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 // ============================================================================
 // Common Types
@@ -68,20 +69,31 @@ pub struct PlaceSmartOrderRequest {
 }
 
 /// Options order request
+///
+/// Mirrors Python's `optionsorder()`: `expiry_date` is optional (the server
+/// can resolve it from the underlying, e.g. `NIFTY28OCT25FUT`), and there is
+/// no `splitsize` field on this endpoint (Python has no such parameter here).
 #[derive(Debug, Clone, Serialize)]
 pub struct OptionsOrderRequest {
     pub apikey: String,
     pub strategy: String,
     pub underlying: String,
     pub exchange: String,
-    pub expiry_date: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expiry_date: Option<String>,
     pub offset: String,
     pub option_type: String,
     pub action: String,
     pub quantity: String,
     pub pricetype: String,
     pub product: String,
-    pub splitsize: String,
+    /// Deprecated in Python (`strike_int`) — kept optional for backward compatibility.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub strike_int: Option<String>,
+    /// Extra broker-specific fields forwarded verbatim, mirroring Python's `**kwargs`
+    /// (e.g. `price`, `trigger_price`, `disclosed_quantity`).
+    #[serde(flatten)]
+    pub extra: HashMap<String, serde_json::Value>,
 }
 
 /// Options order response
@@ -286,6 +298,9 @@ pub struct ModifyOrderRequest {
     pub disclosed_quantity: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub trigger_price: Option<String>,
+    /// Extra broker-specific fields forwarded verbatim, mirroring Python's `**kwargs`.
+    #[serde(flatten)]
+    pub extra: HashMap<String, serde_json::Value>,
 }
 
 /// Cancel order request
@@ -625,7 +640,11 @@ pub struct SymbolResponse {
 pub struct SearchRequest {
     pub apikey: String,
     pub query: String,
-    pub exchange: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exchange: Option<String>,
+    /// Extra broker-specific fields forwarded verbatim, mirroring Python's `**kwargs`.
+    #[serde(flatten)]
+    pub extra: HashMap<String, serde_json::Value>,
 }
 
 /// Search response
@@ -637,14 +656,27 @@ pub struct SearchResponse {
 }
 
 /// Option symbol request
+///
+/// Mirrors Python's `optionsymbol()`: `expiry_date` is optional (resolvable from
+/// an underlying that already embeds an expiry, e.g. `NIFTY28OCT25FUT`).
 #[derive(Debug, Clone, Serialize)]
 pub struct OptionSymbolRequest {
     pub apikey: String,
     pub underlying: String,
     pub exchange: String,
-    pub expiry_date: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expiry_date: Option<String>,
     pub offset: String,
     pub option_type: String,
+    /// Deprecated in Python — kept optional for backward compatibility.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub strategy: Option<String>,
+    /// Deprecated in Python (`strike_int`) — kept optional for backward compatibility.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub strike_int: Option<String>,
+    /// Extra broker-specific fields forwarded verbatim, mirroring Python's `**kwargs`.
+    #[serde(flatten)]
+    pub extra: HashMap<String, serde_json::Value>,
 }
 
 /// Option symbol response
@@ -682,14 +714,28 @@ pub struct SyntheticFutureResponse {
 }
 
 /// Option Greeks request
+///
+/// Mirrors Python's `optiongreeks()`: everything besides `symbol`/`exchange`
+/// is optional — the server auto-detects the underlying, defaults the
+/// interest rate to 0, and fetches live prices unless `forward_price` is given.
 #[derive(Debug, Clone, Serialize)]
 pub struct OptionGreeksRequest {
     pub apikey: String,
     pub symbol: String,
     pub exchange: String,
-    pub interest_rate: f64,
-    pub underlying_symbol: String,
-    pub underlying_exchange: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub interest_rate: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub forward_price: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub underlying_symbol: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub underlying_exchange: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expiry_time: Option<String>,
+    /// Extra broker-specific fields forwarded verbatim, mirroring Python's `**kwargs`.
+    #[serde(flatten)]
+    pub extra: HashMap<String, serde_json::Value>,
 }
 
 /// Greeks data
@@ -978,10 +1024,14 @@ pub struct HoldingsResponse {
 }
 
 /// Holidays request
+///
+/// `year` is optional, mirroring Python's `holidays(year=None)` — when omitted
+/// the server defaults to the current year.
 #[derive(Debug, Clone, Serialize)]
 pub struct HolidaysRequest {
     pub apikey: String,
-    pub year: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub year: Option<i32>,
 }
 
 /// Open exchange timing
@@ -1048,6 +1098,59 @@ pub struct TelegramRequest {
 pub struct TelegramResponse {
     pub status: String,
     pub message: Option<String>,
+}
+
+/// WhatsApp notify request
+///
+/// Mirrors the exact JSON shape the OpenAlgo server's `WhatsAppNotify` schema
+/// expects. Exactly one of `username` / `phone` / `phones` / `self_` should be
+/// set to pick the recipient (see [`crate::whatsapp::WhatsAppRecipient`]).
+#[derive(Debug, Clone, Serialize)]
+pub struct WhatsAppRequest {
+    pub apikey: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub username: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phone: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phones: Option<Vec<String>>,
+    #[serde(rename = "self", skip_serializing_if = "Option::is_none")]
+    pub self_: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub document_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub caption: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub filename: Option<String>,
+    pub wait_for_delivery: bool,
+    /// Extra fields forwarded verbatim, mirroring Python's `**kwargs`.
+    #[serde(flatten)]
+    pub extra: HashMap<String, serde_json::Value>,
+}
+
+/// Per-recipient WhatsApp delivery report (present when `wait_for_delivery=true`)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WhatsAppData {
+    pub sent: Option<Vec<String>>,
+    pub failed: Option<Vec<String>>,
+    pub skipped: Option<i32>,
+}
+
+/// WhatsApp notify response
+///
+/// With `wait_for_delivery=true` (default), `data` carries the per-recipient
+/// delivery report. With `wait_for_delivery=false`, `queued` carries the
+/// number of recipients queued instead.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WhatsAppResponse {
+    pub status: String,
+    pub message: Option<String>,
+    pub data: Option<WhatsAppData>,
+    pub queued: Option<i32>,
 }
 
 // ============================================================================

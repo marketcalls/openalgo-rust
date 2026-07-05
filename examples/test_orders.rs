@@ -43,14 +43,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "Test",
         "NIFTY",
         "NFO",
-        "241226",   // 26DEC24
         "0",        // ATM
         "CE",       // Call
         "BUY",
         "50",       // Lot size
         "MARKET",
         "MIS",
-        "25",       // Quantity
+        Some("241226"), // expiry_date (26DEC24)
+        None,       // strike_int (deprecated)
+        None,       // extra kwargs
     ).await {
         Ok(result) => println!("Options Order: {:?}", result),
         Err(e) => println!("Options Order Error: {:?}", e),

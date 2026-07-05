@@ -30,14 +30,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Test 4: Get Holidays
     println!("\n=== Testing Holidays ===");
-    match client.holidays(2024).await {
+    match client.holidays(Some(2024)).await {
         Ok(result) => println!("Holidays: {:?}", result),
         Err(e) => println!("Holidays Error: {:?}", e),
     }
 
     // Test 5: Get Timings
     println!("\n=== Testing Timings ===");
-    match client.timings("2024-12-25").await {
+    match client.timings(Some("2024-12-25")).await {
         Ok(result) => println!("Timings: {:?}", result),
         Err(e) => println!("Timings Error: {:?}", e),
     }

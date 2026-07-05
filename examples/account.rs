@@ -46,12 +46,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Example 7: Get holidays
     println!("\n=== Holidays ===");
-    let result = client.holidays(2024).await?;
+    let result = client.holidays(Some(2024)).await?;
     println!("Holidays: {:?}", result);
 
     // Example 8: Get exchange timings
     println!("\n=== Timings ===");
-    let result = client.timings("2024-12-25").await?;
+    let result = client.timings(Some("2024-12-25")).await?;
     println!("Timings: {:?}", result);
 
     // Example 9: Send Telegram message

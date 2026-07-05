@@ -51,7 +51,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Example 8: Search symbols
     println!("\n=== Search ===");
-    let result = client.search("RELI", "NSE").await?;
+    let result = client.search("RELI", Some("NSE"), None).await?;
     println!("Search Results: {:?}", result);
 
     // Example 9: Get expiry dates
@@ -66,7 +66,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Example 11: Get option symbol
     println!("\n=== Option Symbol ===");
-    let result = client.option_symbol("NIFTY", "NFO", "241226", "0", "CE").await?;
+    let result = client.option_symbol("NIFTY", "NFO", "0", "CE", Some("241226"), None, None, None).await?;
     println!("Option Symbol: {:?}", result);
 
     // Example 12: Get synthetic future price
@@ -79,15 +79,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let result = client.option_greeks(
         "NIFTY24DEC24000CE",
         "NFO",
-        6.5,
-        "NIFTY",
-        "NSE",
+        Some(6.5),
+        None,
+        Some("NIFTY"),
+        Some("NSE"),
+        None,
+        None,
     ).await?;
     println!("Option Greeks: {:?}", result);
 
     // Example 14: Get instruments
     println!("\n=== Instruments ===");
-    let result = client.instruments("NSE").await?;
+    let result = client.instruments(Some("NSE")).await?;
     println!("Total Instruments: {:?}", result.status);
 
     Ok(())

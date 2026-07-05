@@ -16,7 +16,7 @@
 //!     println!("{:?}", quotes);
 //!
 //!     // Place a simple market order
-//!     let order = client.place_order("Test", "RELIANCE", "BUY", "NSE", "MARKET", "MIS", "1").await?;
+//!     let order = client.place_order("Test", "RELIANCE", "BUY", "NSE", "MARKET", "MIS", "1", None).await?;
 //!     println!("{:?}", order);
 //!
 //!     Ok(())
@@ -31,6 +31,8 @@ pub mod account;
 pub mod utilities;
 pub mod analyzer;
 pub mod websocket;
+pub mod whatsapp;
+pub mod strategy;
 
 pub use types::*;
 pub use client::OpenAlgoClient;
@@ -39,8 +41,11 @@ pub use data::DataAPI;
 pub use account::AccountAPI;
 pub use utilities::UtilitiesAPI;
 pub use analyzer::AnalyzerAPI;
-pub use websocket::OpenAlgoWebSocket;
+pub use websocket::{OpenAlgoWebSocket, WsData};
+pub use whatsapp::WhatsAppAPI;
+pub use strategy::Strategy;
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 /// OpenAlgo API client combining all API modules
@@ -51,6 +56,7 @@ pub struct OpenAlgo {
     pub account: AccountAPI,
     pub utilities: UtilitiesAPI,
     pub analyzer: AnalyzerAPI,
+    pub whatsapp: WhatsAppAPI,
 }
 
 impl OpenAlgo {
@@ -80,6 +86,7 @@ impl OpenAlgo {
             account: AccountAPI::new(Arc::clone(&client)),
             utilities: UtilitiesAPI::new(Arc::clone(&client)),
             analyzer: AnalyzerAPI::new(Arc::clone(&client)),
+            whatsapp: WhatsAppAPI::new(Arc::clone(&client)),
             client,
         }
     }
@@ -95,10 +102,13 @@ impl OpenAlgo {
 
     /// Place a market order (simplest form)
     ///
+    /// * `disclosed_quantity` - Optional disclosed quantity, mirroring Python's `**kwargs`.
+    ///
     /// # Example
     /// ```rust,no_run
-    /// let order = client.place_order("Strategy1", "RELIANCE", "BUY", "NSE", "MARKET", "MIS", "1").await?;
+    /// let order = client.place_order("Strategy1", "RELIANCE", "BUY", "NSE", "MARKET", "MIS", "1", None).await?;
     /// ```
+    #[allow(clippy::too_many_arguments)]
     pub async fn place_order(
         &self,
         strategy: &str,
@@ -108,16 +118,20 @@ impl OpenAlgo {
         pricetype: &str,
         product: &str,
         quantity: &str,
+        disclosed_quantity: Option<&str>,
     ) -> Result<OrderResponse, crate::client::OpenAlgoError> {
-        self.orders.place_order(strategy, symbol, action, exchange, pricetype, product, quantity).await
+        self.orders.place_order(strategy, symbol, action, exchange, pricetype, product, quantity, disclosed_quantity).await
     }
 
     /// Place a limit order with price
     ///
+    /// * `disclosed_quantity` - Optional disclosed quantity, mirroring Python's `**kwargs`.
+    ///
     /// # Example
     /// ```rust,no_run
-    /// let order = client.place_limit_order("Strategy1", "RELIANCE", "BUY", "NSE", "MIS", "1", "2500.00").await?;
+    /// let order = client.place_limit_order("Strategy1", "RELIANCE", "BUY", "NSE", "MIS", "1", "2500.00", None).await?;
     /// ```
+    #[allow(clippy::too_many_arguments)]
     pub async fn place_limit_order(
         &self,
         strategy: &str,
@@ -127,16 +141,20 @@ impl OpenAlgo {
         product: &str,
         quantity: &str,
         price: &str,
+        disclosed_quantity: Option<&str>,
     ) -> Result<OrderResponse, crate::client::OpenAlgoError> {
-        self.orders.place_limit_order(strategy, symbol, action, exchange, product, quantity, price).await
+        self.orders.place_limit_order(strategy, symbol, action, exchange, product, quantity, price, disclosed_quantity).await
     }
 
     /// Place a stop-loss order
     ///
+    /// * `disclosed_quantity` - Optional disclosed quantity, mirroring Python's `**kwargs`.
+    ///
     /// # Example
     /// ```rust,no_run
-    /// let order = client.place_sl_order("Strategy1", "RELIANCE", "BUY", "NSE", "MIS", "1", "2500.00", "2490.00").await?;
+    /// let order = client.place_sl_order("Strategy1", "RELIANCE", "BUY", "NSE", "MIS", "1", "2500.00", "2490.00", None).await?;
     /// ```
+    #[allow(clippy::too_many_arguments)]
     pub async fn place_sl_order(
         &self,
         strategy: &str,
@@ -147,8 +165,9 @@ impl OpenAlgo {
         quantity: &str,
         price: &str,
         trigger_price: &str,
+        disclosed_quantity: Option<&str>,
     ) -> Result<OrderResponse, crate::client::OpenAlgoError> {
-        self.orders.place_sl_order(strategy, symbol, action, exchange, product, quantity, price, trigger_price).await
+        self.orders.place_sl_order(strategy, symbol, action, exchange, product, quantity, price, trigger_price, disclosed_quantity).await
     }
 
     /// Place a smart order with position sizing
@@ -171,27 +190,32 @@ impl OpenAlgo {
         self.orders.place_smart_order(strategy, symbol, action, exchange, pricetype, product, quantity, position_size).await
     }
 
-    /// Place an options order
+    /// Place an options order (auto-resolves symbol from underlying + offset)
+    ///
+    /// Note: there is no `splitsize` parameter on this endpoint (Python has none
+    /// either) — use [`OpenAlgo::split_order`] separately if needed.
     ///
     /// # Example
     /// ```rust,no_run
-    /// let order = client.options_order("Strategy1", "NIFTY", "NFO", "241226", "0", "CE", "BUY", "50", "MARKET", "MIS", "50").await?;
+    /// let order = client.options_order("Strategy1", "NIFTY", "NFO", "0", "CE", "BUY", "50", "MARKET", "MIS", Some("241226"), None, None).await?;
     /// ```
+    #[allow(clippy::too_many_arguments)]
     pub async fn options_order(
         &self,
         strategy: &str,
         underlying: &str,
         exchange: &str,
-        expiry_date: &str,
         offset: &str,
         option_type: &str,
         action: &str,
         quantity: &str,
         pricetype: &str,
         product: &str,
-        splitsize: &str,
+        expiry_date: Option<&str>,
+        strike_int: Option<i32>,
+        extra: Option<HashMap<String, serde_json::Value>>,
     ) -> Result<OptionsOrderResponse, crate::client::OpenAlgoError> {
-        self.orders.options_order(strategy, underlying, exchange, expiry_date, offset, option_type, action, quantity, pricetype, product, splitsize).await
+        self.orders.options_order(strategy, underlying, exchange, offset, option_type, action, quantity, pricetype, product, expiry_date, strike_int, extra).await
     }
 
     /// Place a multi-leg options order
@@ -259,8 +283,9 @@ impl OpenAlgo {
     ///
     /// # Example
     /// ```rust,no_run
-    /// let result = client.modify_order("1234567890", "Strategy1", "RELIANCE", "BUY", "NSE", "LIMIT", "MIS", "1", "2550.00").await?;
+    /// let result = client.modify_order("1234567890", "Strategy1", "RELIANCE", "BUY", "NSE", "LIMIT", "MIS", "1", "2550.00", None, None, None).await?;
     /// ```
+    #[allow(clippy::too_many_arguments)]
     pub async fn modify_order(
         &self,
         orderid: &str,
@@ -272,8 +297,11 @@ impl OpenAlgo {
         product: &str,
         quantity: &str,
         price: &str,
+        disclosed_quantity: Option<&str>,
+        trigger_price: Option<&str>,
+        extra: Option<HashMap<String, serde_json::Value>>,
     ) -> Result<OrderResponse, crate::client::OpenAlgoError> {
-        self.orders.modify_order(orderid, strategy, symbol, action, exchange, pricetype, product, quantity, price).await
+        self.orders.modify_order(orderid, strategy, symbol, action, exchange, pricetype, product, quantity, price, disclosed_quantity, trigger_price, extra).await
     }
 
     /// Cancel an order
@@ -433,6 +461,19 @@ impl OpenAlgo {
         self.data.intervals().await
     }
 
+    /// Legacy alias for [`OpenAlgo::intervals`]. Mirrors Python's `interval()`.
+    ///
+    /// # Example
+    /// ```rust,no_run
+    /// # use openalgo::OpenAlgo;
+    /// # async fn run(client: &OpenAlgo) -> Result<(), Box<dyn std::error::Error>> {
+    /// let intervals = client.interval().await?;
+    /// # Ok(()) }
+    /// ```
+    pub async fn interval(&self) -> Result<IntervalsResponse, crate::client::OpenAlgoError> {
+        self.data.interval().await
+    }
+
     /// Get option chain
     ///
     /// # Example
@@ -462,35 +503,40 @@ impl OpenAlgo {
         self.data.symbol(symbol, exchange).await
     }
 
-    /// Search symbols
+    /// Search symbols across exchanges. Pass `exchange: None` to search all exchanges.
     ///
     /// # Example
     /// ```rust,no_run
-    /// let results = client.search("RELI", "NSE").await?;
+    /// let results = client.search("RELI", Some("NSE"), None).await?;
     /// ```
     pub async fn search(
         &self,
         query: &str,
-        exchange: &str,
+        exchange: Option<&str>,
+        extra: Option<HashMap<String, serde_json::Value>>,
     ) -> Result<SearchResponse, crate::client::OpenAlgoError> {
-        self.data.search(query, exchange).await
+        self.data.search(query, exchange, extra).await
     }
 
-    /// Get option symbol
+    /// Get option symbol details by underlying + offset (no order placed)
     ///
     /// # Example
     /// ```rust,no_run
-    /// let symbol = client.option_symbol("NIFTY", "NFO", "241226", "0", "CE").await?;
+    /// let symbol = client.option_symbol("NIFTY", "NFO", "0", "CE", Some("241226"), None, None, None).await?;
     /// ```
+    #[allow(clippy::too_many_arguments)]
     pub async fn option_symbol(
         &self,
         underlying: &str,
         exchange: &str,
-        expiry_date: &str,
         offset: &str,
         option_type: &str,
+        expiry_date: Option<&str>,
+        strategy: Option<&str>,
+        strike_int: Option<i32>,
+        extra: Option<HashMap<String, serde_json::Value>>,
     ) -> Result<OptionSymbolResponse, crate::client::OpenAlgoError> {
-        self.data.option_symbol(underlying, exchange, expiry_date, offset, option_type).await
+        self.data.option_symbol(underlying, exchange, offset, option_type, expiry_date, strategy, strike_int, extra).await
     }
 
     /// Get synthetic future price
@@ -508,21 +554,26 @@ impl OpenAlgo {
         self.data.synthetic_future(underlying, exchange, expiry_date).await
     }
 
-    /// Get option Greeks
+    /// Get option Greeks. Only `symbol`/`exchange` are required — everything
+    /// else is optional and auto-detected/defaulted server-side.
     ///
     /// # Example
     /// ```rust,no_run
-    /// let greeks = client.option_greeks("NIFTY24DEC24000CE", "NFO", 6.5, "NIFTY", "NSE").await?;
+    /// let greeks = client.option_greeks("NIFTY24DEC24000CE", "NFO", Some(6.5), None, Some("NIFTY"), Some("NSE"), None, None).await?;
     /// ```
+    #[allow(clippy::too_many_arguments)]
     pub async fn option_greeks(
         &self,
         symbol: &str,
         exchange: &str,
-        interest_rate: f64,
-        underlying_symbol: &str,
-        underlying_exchange: &str,
+        interest_rate: Option<f64>,
+        forward_price: Option<f64>,
+        underlying_symbol: Option<&str>,
+        underlying_exchange: Option<&str>,
+        expiry_time: Option<&str>,
+        extra: Option<HashMap<String, serde_json::Value>>,
     ) -> Result<OptionGreeksResponse, crate::client::OpenAlgoError> {
-        self.data.option_greeks(symbol, exchange, interest_rate, underlying_symbol, underlying_exchange).await
+        self.data.option_greeks(symbol, exchange, interest_rate, forward_price, underlying_symbol, underlying_exchange, expiry_time, extra).await
     }
 
     /// Get expiry dates
@@ -540,15 +591,16 @@ impl OpenAlgo {
         self.data.expiry(symbol, exchange, instrumenttype).await
     }
 
-    /// Get instruments
+    /// Download instrument master data. Pass `exchange: None` to download ALL exchanges.
     ///
     /// # Example
     /// ```rust,no_run
-    /// let instruments = client.instruments("NSE").await?;
+    /// let instruments = client.instruments(Some("NSE")).await?;
+    /// let all_instruments = client.instruments(None).await?;
     /// ```
     pub async fn instruments(
         &self,
-        exchange: &str,
+        exchange: Option<&str>,
     ) -> Result<InstrumentsResponse, crate::client::OpenAlgoError> {
         self.data.instruments(exchange).await
     }
@@ -628,28 +680,30 @@ impl OpenAlgo {
     // Utilities API
     // =========================================================================
 
-    /// Get market holidays
+    /// Get market holidays. Pass `year: None` to use the server's default (current year).
     ///
     /// # Example
     /// ```rust,no_run
-    /// let holidays = client.holidays(2024).await?;
+    /// let holidays = client.holidays(Some(2024)).await?;
+    /// let holidays_this_year = client.holidays(None).await?;
     /// ```
     pub async fn holidays(
         &self,
-        year: i32,
+        year: Option<i32>,
     ) -> Result<HolidaysResponse, crate::client::OpenAlgoError> {
         self.utilities.holidays(year).await
     }
 
-    /// Get exchange timings
+    /// Get exchange timings. Pass `date: None` to default to today's date.
     ///
     /// # Example
     /// ```rust,no_run
-    /// let timings = client.timings("2024-12-25").await?;
+    /// let timings = client.timings(Some("2024-12-25")).await?;
+    /// let todays_timings = client.timings(None).await?;
     /// ```
     pub async fn timings(
         &self,
-        date: &str,
+        date: Option<&str>,
     ) -> Result<TimingsResponse, crate::client::OpenAlgoError> {
         self.utilities.timings(date).await
     }
@@ -681,6 +735,38 @@ impl OpenAlgo {
         priority: i32,
     ) -> Result<TelegramResponse, crate::client::OpenAlgoError> {
         self.utilities.telegram_priority(username, message, priority).await
+    }
+
+    // =========================================================================
+    // WhatsApp API
+    // =========================================================================
+
+    /// Send a WhatsApp message to the paired device (self). For image/document
+    /// attachments, multi-recipient broadcasts, or `wait_for_delivery=false`,
+    /// use `client.whatsapp.whatsapp(recipient, options)` directly.
+    ///
+    /// # Example
+    /// ```rust,no_run
+    /// # use openalgo::OpenAlgo;
+    /// # async fn run(client: &OpenAlgo) -> Result<(), Box<dyn std::error::Error>> {
+    /// let result = client.whatsapp_message("Build #482 deployed. P&L: +1.2%").await?;
+    /// # Ok(()) }
+    /// ```
+    pub async fn whatsapp_message(&self, message: &str) -> Result<WhatsAppResponse, crate::client::OpenAlgoError> {
+        self.whatsapp.whatsapp_message(message).await
+    }
+
+    /// Send a WhatsApp message to a single phone number (E.164 digits, e.g. "919876543210").
+    ///
+    /// # Example
+    /// ```rust,no_run
+    /// # use openalgo::OpenAlgo;
+    /// # async fn run(client: &OpenAlgo) -> Result<(), Box<dyn std::error::Error>> {
+    /// let result = client.whatsapp_to("919876543210", "Stop-loss hit on BANKNIFTY!").await?;
+    /// # Ok(()) }
+    /// ```
+    pub async fn whatsapp_to(&self, to: &str, message: &str) -> Result<WhatsAppResponse, crate::client::OpenAlgoError> {
+        self.whatsapp.whatsapp_to(to, message).await
     }
 
     // =========================================================================
